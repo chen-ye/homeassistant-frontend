@@ -11,6 +11,7 @@ import {
 import type { HomeAssistant, PanelInfo } from "../types";
 import type { PageNavigation } from "../layouts/hass-tabs-subpage";
 import type { LocalizeKeys } from "../common/translations/localize";
+import { domainToName } from "./integration";
 
 /** Panel to show when no panel is picked. */
 export const DEFAULT_PANEL = "home";
@@ -93,17 +94,113 @@ export const getConfigSubpageTitle = (
   path: string,
   configSections: Record<string, PageNavigation[]>
 ): string | undefined => {
-  // Search through all config section groups for a matching path
+  // Parse path into segments, ignoring empty ones (e.g., "/config/integrations/" -> ["config", "integrations"])
+  const parts = path.split("/").filter(Boolean);
+
+  // We only handle titles for config and hassio subpages
+  if (parts.length < 2 || (parts[0] !== "config" && parts[0] !== "hassio")) {
+    return undefined;
+  }
+
+  const [root, section, subSection, id] = parts;
+
+  // Helper to extract a friendly name from an entity ID
+  const getEntityTitle = (entityId: string) =>
+    hass.states[entityId]
+      ? hass.states[entityId].attributes.friendly_name ||
+        hass.states[entityId].entity_id
+      : undefined;
+
+  /**
+   * Route handlers for specific detail pages.
+   * These provide highly specific titles (e.g., the name of a device or integration)
+   * when the user is navigating deep into the configuration panel.
+   */
+  const handlers: Record<
+    string,
+    (args: { subSection?: string; id?: string }) => string | undefined
+  > = {
+    // /config/integrations/integration/<domain>
+    integrations: (args) =>
+      args.subSection === "integration" && args.id
+        ? domainToName(hass.localize, args.id)
+        : undefined,
+
+    // /config/devices/device/<deviceId>
+    devices: (args) => {
+      if (args.subSection !== "device" || !args.id) {
+        return undefined;
+      }
+      const device = hass.devices[args.id];
+      return device ? device.name_by_user || device.name : undefined;
+    },
+
+    // /config/entities/entity/<entityId>
+    entities: (args) =>
+      args.subSection === "entity" && args.id
+        ? getEntityTitle(args.id)
+        : undefined,
+
+    // /config/automation/edit/<entityId>
+    automation: (args) =>
+      args.subSection === "edit" && args.id
+        ? getEntityTitle(args.id)
+        : undefined,
+
+    // /config/scene/edit/<entityId>
+    scene: (args) =>
+      args.subSection === "edit" && args.id
+        ? getEntityTitle(args.id)
+        : undefined,
+
+    // /config/script/edit/<entityId>
+    script: (args) =>
+      args.subSection === "edit" && args.id
+        ? getEntityTitle(args.id)
+        : undefined,
+
+    // /config/app/<slug> (Add-on detail page) or /hassio/addon/<slug>
+    app: ({ subSection: slug }) => (slug ? "Add-on" : undefined),
+
+    // /hassio/addon/<slug>
+    addon: ({ subSection: slug }) => (slug ? "Add-on" : undefined),
+  };
+
+  // Check if we have a specific handler for this sub-route
+  const handlerTitle = handlers[section]?.({ subSection, id });
+  if (handlerTitle) {
+    return handlerTitle;
+  }
+
+  // If we are in the hassio root, return undefined to fall back to panel title
+  if (root === "hassio") {
+    return undefined;
+  }
+
+  /**
+   * Fallback: Search through config navigation metadata for a matching path.
+   * This handles top-level categories like "Automations", "Updates", etc.
+   */
   for (const sectionGroup of Object.values(configSections)) {
     const pageNav = sectionGroup.find((nav) => path.startsWith(nav.path));
     if (pageNav) {
+      // If the page defines a translation key, try multiple lookup patterns
       if (pageNav.translationKey) {
-        const localized = hass.localize(pageNav.translationKey as LocalizeKeys);
-        if (localized) {
-          return localized;
+        const candidateKeys = [
+          pageNav.translationKey, // Direct lookup (e.g. "devices")
+          `ui.panel.config.dashboard.${pageNav.translationKey}.main`, // Dashboard lookup (e.g. "ui.panel.config.dashboard.devices.main")
+          `ui.panel.config.${pageNav.translationKey}.caption`, // Section lookup (e.g. "ui.panel.config.automation.caption")
+        ];
+
+        for (const key of candidateKeys) {
+          const localized = hass.localize(key as LocalizeKeys);
+          if (localized) {
+            return localized;
+          }
         }
       }
 
+      // Fallback to the hardcoded name if translations are missing
       if (pageNav.name) {
         return pageNav.name;
       }

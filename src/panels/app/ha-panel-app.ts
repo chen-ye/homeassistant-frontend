@@ -316,6 +316,7 @@ class HaPanelApp extends LitElement {
     }, 60000);
 
     this._addon = addon;
+    fireEvent(this, "ha-change-page-title", { title: this._addon.name });
   }
 
   private async _checkLoaded(ev: Event): Promise<void> {

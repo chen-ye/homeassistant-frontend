@@ -29,7 +29,9 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 declare global {
-  interface HASSDomEvents {}
+  interface HASSDomEvents {
+    "ha-change-page-title": { title: string };
+  }
 }
 
 export type ValidHassDomEvent = keyof HASSDomEvents;

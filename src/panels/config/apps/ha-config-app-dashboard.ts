@@ -147,6 +147,7 @@ class HaConfigAppDashboard extends LitElement {
 
     try {
       this._addon = await fetchHassioAddonInfo(this.hass, slug);
+      fireEvent(this, "ha-change-page-title", { title: this._addon.name });
     } catch (err: any) {
       this._error = `Error loading addon: ${extractApiErrorMessage(err)}`;
     }
